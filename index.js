@@ -2,19 +2,29 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://shoppingcartfe-4zekofv5k-khelan-mehtas-projects.vercel.app",
+      "http://localhost:5173",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  }),
+);
+
 app.use(express.json());
 
 // ─── In-Memory Product Database ───
 const products = {
-  "A1B2C3D4": { name: "Milk (1L)", price: 40, category: "Dairy" },
-  "11223344": { name: "Bread (White)", price: 30, category: "Bakery" },
-  "55667788": { name: "Rice (1kg)", price: 65, category: "Grains" },
-  "AABBCCDD": { name: "Eggs (6 pcs)", price: 48, category: "Dairy" },
-  "99887766": { name: "Butter (100g)", price: 55, category: "Dairy" },
-  "DEADBEEF": { name: "Apple Juice (500ml)", price: 80, category: "Beverages" },
-  "CAFEBABE": { name: "Biscuits (200g)", price: 25, category: "Snacks" },
-  "F00DCAFE": { name: "Chips (150g)", price: 35, category: "Snacks" },
+  A1B2C3D4: { name: "Milk (1L)", price: 40, category: "Dairy" },
+  11223344: { name: "Bread (White)", price: 30, category: "Bakery" },
+  55667788: { name: "Rice (1kg)", price: 65, category: "Grains" },
+  AABBCCDD: { name: "Eggs (6 pcs)", price: 48, category: "Dairy" },
+  99887766: { name: "Butter (100g)", price: 55, category: "Dairy" },
+  DEADBEEF: { name: "Apple Juice (500ml)", price: 80, category: "Beverages" },
+  CAFEBABE: { name: "Biscuits (200g)", price: 25, category: "Snacks" },
+  F00DCAFE: { name: "Chips (150g)", price: 35, category: "Snacks" },
 };
 
 // ─── Cart State (per cart_id) ───
@@ -67,7 +77,7 @@ app.post("/api/scan", (req, res) => {
 
   // Check if item already in cart (toggle: add/remove)
   const existingIndex = cart.items.findIndex(
-    (item) => item.tag_id === normalizedTag
+    (item) => item.tag_id === normalizedTag,
   );
 
   let action;
@@ -99,7 +109,7 @@ app.post("/api/scan", (req, res) => {
   };
 
   console.log(
-    `[${action.toUpperCase()}] ${product.name} (₹${product.price}) → Cart Total: ₹${cart.total}`
+    `[${action.toUpperCase()}] ${product.name} (₹${product.price}) → Cart Total: ₹${cart.total}`,
   );
 
   res.json(response);
@@ -149,7 +159,7 @@ app.post("/api/cart/:cartId/checkout", (req, res) => {
   };
 
   console.log(
-    `[CHECKOUT] Receipt ${receipt.receiptId} → ₹${receipt.total} (${receipt.itemCount} items)`
+    `[CHECKOUT] Receipt ${receipt.receiptId} → ₹${receipt.total} (${receipt.itemCount} items)`,
   );
 
   res.json({ receipt });
@@ -163,12 +173,14 @@ app.get("/api/simulate/:tagId", (req, res) => {
   const product = products[normalizedTag];
 
   if (!product) {
-    return res.status(404).json({ error: "Unknown product", tag_id: normalizedTag });
+    return res
+      .status(404)
+      .json({ error: "Unknown product", tag_id: normalizedTag });
   }
 
   const cart = getCart("default");
   const existingIndex = cart.items.findIndex(
-    (item) => item.tag_id === normalizedTag
+    (item) => item.tag_id === normalizedTag,
   );
 
   let action;
