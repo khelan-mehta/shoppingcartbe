@@ -2,18 +2,29 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+
+// ✅ Allow all origins (for testing)
 app.use(
   cors({
-    origin: [
-      "https://shoppingcartfe-4zekofv5k-khelan-mehtas-projects.vercel.app",
-      "http://localhost:5173",
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
-  }),
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  })
 );
 
 app.use(express.json());
+
+// Handle preflight manually (important for Vercel)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
 
 // ─── In-Memory Product Database ───
 const products = {
@@ -27,8 +38,6 @@ const products = {
   F00DCAFE: { name: "Chips (150g)", price: 35, category: "Snacks" },
 };
 
-// ─── Cart State (per cart_id) ───
-// In production, use a database. This is a simple in-memory store.
 const carts = {};
 
 function getCart(cartId) {
@@ -43,19 +52,16 @@ function getCart(cartId) {
   return carts[cartId];
 }
 
-// ─── API ROUTES ───
+// ─── ROUTES ───
 
-// Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Get all products (for admin/debug)
 app.get("/api/products", (req, res) => {
   res.json({ products });
 });
 
-// ESP32 scans an RFID tag → POST /api/scan
 app.post("/api/scan", (req, res) => {
   const { tag_id, cart_id = "default" } = req.body;
 
@@ -67,123 +73,17 @@ app.post("/api/scan", (req, res) => {
   const product = products[normalizedTag];
 
   if (!product) {
-    return res.status(404).json({
-      error: "Unknown product",
-      tag_id: normalizedTag,
-    });
+    return res.status(404).json({ error: "Unknown product" });
   }
 
   const cart = getCart(cart_id);
 
-  // Check if item already in cart (toggle: add/remove)
   const existingIndex = cart.items.findIndex(
-    (item) => item.tag_id === normalizedTag,
+    (item) => item.tag_id === normalizedTag
   );
 
   let action;
-  if (existingIndex !== -1) {
-    // Remove item (scanned again = remove)
-    cart.items.splice(existingIndex, 1);
-    cart.total -= product.price;
-    action = "removed";
-  } else {
-    // Add item
-    cart.items.push({
-      tag_id: normalizedTag,
-      name: product.name,
-      price: product.price,
-      category: product.category,
-      scannedAt: new Date().toISOString(),
-    });
-    cart.total += product.price;
-    action = "added";
-  }
 
-  const response = {
-    action,
-    product: product.name,
-    price: product.price,
-    cart_total: cart.total,
-    cart_items: cart.items.length,
-    cart: cart,
-  };
-
-  console.log(
-    `[${action.toUpperCase()}] ${product.name} (₹${product.price}) → Cart Total: ₹${cart.total}`,
-  );
-
-  res.json(response);
-});
-
-// Get cart details
-app.get("/api/cart/:cartId", (req, res) => {
-  const cart = getCart(req.params.cartId);
-  res.json({ cart });
-});
-
-// Clear cart
-app.post("/api/cart/:cartId/clear", (req, res) => {
-  const cartId = req.params.cartId;
-  carts[cartId] = {
-    id: cartId,
-    items: [],
-    total: 0,
-    createdAt: new Date().toISOString(),
-  };
-  console.log(`[CLEARED] Cart ${cartId}`);
-  res.json({ message: "Cart cleared", cart: carts[cartId] });
-});
-
-// Checkout
-app.post("/api/cart/:cartId/checkout", (req, res) => {
-  const cart = getCart(req.params.cartId);
-
-  if (cart.items.length === 0) {
-    return res.status(400).json({ error: "Cart is empty" });
-  }
-
-  const receipt = {
-    receiptId: `RCP-${Date.now()}`,
-    items: [...cart.items],
-    total: cart.total,
-    itemCount: cart.items.length,
-    checkoutTime: new Date().toISOString(),
-  };
-
-  // Clear the cart after checkout
-  carts[req.params.cartId] = {
-    id: req.params.cartId,
-    items: [],
-    total: 0,
-    createdAt: new Date().toISOString(),
-  };
-
-  console.log(
-    `[CHECKOUT] Receipt ${receipt.receiptId} → ₹${receipt.total} (${receipt.itemCount} items)`,
-  );
-
-  res.json({ receipt });
-});
-
-// Simulate RFID scan (for testing without ESP32)
-app.get("/api/simulate/:tagId", (req, res) => {
-  const tag_id = req.params.tagId;
-  // Internally call the scan logic
-  const normalizedTag = tag_id.toUpperCase().replace(/\s+/g, "");
-  const product = products[normalizedTag];
-
-  if (!product) {
-    return res
-      .status(404)
-      .json({ error: "Unknown product", tag_id: normalizedTag });
-  }
-
-  const cart = getCart("default");
-  const existingIndex = cart.items.findIndex(
-    (item) => item.tag_id === normalizedTag,
-  );
-
-  let action;
   if (existingIndex !== -1) {
     cart.items.splice(existingIndex, 1);
     cart.total -= product.price;
@@ -206,16 +106,94 @@ app.get("/api/simulate/:tagId", (req, res) => {
     price: product.price,
     cart_total: cart.total,
     cart_items: cart.items.length,
-    cart: cart,
+    cart,
   });
 });
 
-// ─── START SERVER ───
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n🛒 Smart Cart Server running on port ${PORT}`);
-  console.log(`   Health:    http://localhost:${PORT}/api/health`);
-  console.log(`   Products:  http://localhost:${PORT}/api/products`);
-  console.log(`   Simulate:  http://localhost:${PORT}/api/simulate/A1B2C3D4`);
-  console.log(`\n📡 Waiting for ESP32 scans...\n`);
+app.get("/api/cart/:cartId", (req, res) => {
+  const cart = getCart(req.params.cartId);
+  res.json({ cart });
 });
+
+app.post("/api/cart/:cartId/clear", (req, res) => {
+  const cartId = req.params.cartId;
+
+  carts[cartId] = {
+    id: cartId,
+    items: [],
+    total: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  res.json({ message: "Cart cleared", cart: carts[cartId] });
+});
+
+app.post("/api/cart/:cartId/checkout", (req, res) => {
+  const cart = getCart(req.params.cartId);
+
+  if (cart.items.length === 0) {
+    return res.status(400).json({ error: "Cart is empty" });
+  }
+
+  const receipt = {
+    receiptId: `RCP-${Date.now()}`,
+    items: [...cart.items],
+    total: cart.total,
+    itemCount: cart.items.length,
+    checkoutTime: new Date().toISOString(),
+  };
+
+  carts[req.params.cartId] = {
+    id: req.params.cartId,
+    items: [],
+    total: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  res.json({ receipt });
+});
+
+app.get("/api/simulate/:tagId", (req, res) => {
+  const normalizedTag = req.params.tagId.toUpperCase().replace(/\s+/g, "");
+  const product = products[normalizedTag];
+
+  if (!product) {
+    return res.status(404).json({ error: "Unknown product" });
+  }
+
+  const cart = getCart("default");
+
+  const existingIndex = cart.items.findIndex(
+    (item) => item.tag_id === normalizedTag
+  );
+
+  let action;
+
+  if (existingIndex !== -1) {
+    cart.items.splice(existingIndex, 1);
+    cart.total -= product.price;
+    action = "removed";
+  } else {
+    cart.items.push({
+      tag_id: normalizedTag,
+      name: product.name,
+      price: product.price,
+      category: product.category,
+      scannedAt: new Date().toISOString(),
+    });
+    cart.total += product.price;
+    action = "added";
+  }
+
+  res.json({
+    action,
+    product: product.name,
+    price: product.price,
+    cart_total: cart.total,
+    cart_items: cart.items.length,
+    cart,
+  });
+});
+
+// ✅ EXPORT FOR VERCEL (IMPORTANT)
+module.exports = app;
