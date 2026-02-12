@@ -184,6 +184,7 @@ app.get("/api/simulate/:tagId", (req, res) => {
     cart.total += product.price;
     action = "added";
   }
+  
 
   res.json({
     action,
@@ -196,4 +197,4 @@ app.get("/api/simulate/:tagId", (req, res) => {
 });
 
 // ✅ EXPORT FOR VERCEL (IMPORTANT)
-module.exports = app;
+module.exports = app; 
